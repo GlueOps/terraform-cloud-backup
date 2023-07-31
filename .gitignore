@@ -1,0 +1,4 @@
+.env
+__pycache__
+*s3-bucket/.terraform
+*s3-bucket/.terraform.lock.hcl
