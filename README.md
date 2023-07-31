@@ -5,14 +5,7 @@ The workspace is setup to run the ```CLI Driven workflow```.
 
 ## Running the script
 
-- Generate your AWS tokens ```AWS_ACCESS_KEY_ID``` and ```AWS_SECRET_ACCESS_KEY``` and add them to your Terraform Workspace
-
-- Ensure your file ```~/.aws/credentials``` is in this format (remove trailing spaces or symbols)
-```
-[profile-name or default]
-aws_access_key_id = <some-value>
-aws_secret_access_key = <some-value>
-```
+- Generate your AWS tokens ```AWS_ACCESS_KEY_ID```, ```AWS_SECRET_ACCESS_KEY``` and ```AWS_DEFAULT_REGION``` and add them to your Terraform Workspace
 
 - Generate a Terraform token
 ```bash
