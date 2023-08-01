@@ -30,5 +30,5 @@ TOKEN=<some-value>
 
 - Runing the script
 ```python
-$ python main.py
+$ docker run --env-file .env -t your-docker-image-name
 ```

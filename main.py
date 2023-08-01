@@ -66,7 +66,7 @@ def get_state_download_url(workspace, TOKEN):
     url = f'https://app.terraform.io/api/v2/workspaces/{workspace_id}/current-state-version'
     response = requests.get(url, headers=headers)
 
-    if response.status_code == 200:
+    if response.ok:
         state_download_url = response.json()["data"]["attributes"]["hosted-state-download-url"]
         logger.info(f'Got the latest state file version for workspace {workspace_id}. Proceeding with backup...')
         return state_download_url
