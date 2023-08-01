@@ -3,7 +3,7 @@ terraform {
     organization = "test-123454"
 
     workspaces {
-      name = "terraform-cloud-backup"
+       name = "test-1-workspace"
     }
   }
 }

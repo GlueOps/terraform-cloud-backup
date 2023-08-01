@@ -9,31 +9,24 @@ from datetime import datetime
 import zipfile
 
 def setup_logger():
-    # Create a custom logger
-    logger = logging.getLogger(__name__)
+    logger = logging.getLogger('TerraformBackupScript')
 
-    # Create handler
-    handler = logging.StreamHandler()
+    if not logger.handlers:
+        handler = logging.StreamHandler()
+        formatter = JsonFormatter()
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
 
-    # Create formatter
-    formatter = JsonFormatter()
-
-    # Add formatter to handler
-    handler.setFormatter(formatter)
-
-    # Add handler to logger
-    logger.addHandler(handler)
-
-    # Set level of logging
     logger.setLevel(logging.INFO)
     return logger
 
 def get_env_vars():
-    ORGANIZATION = os.getenv('ORGANIZATION')
-    S3_BUCKET = os.getenv('S3_BUCKET')
-    TOKEN = os.getenv('TOKEN')
-
-    env_vars = {'ORGANIZATION': ORGANIZATION, 'S3_BUCKET': S3_BUCKET, 'TOKEN': TOKEN}
+    env_vars = {
+        'ORGANIZATION': os.getenv('ORGANIZATION'),
+        'S3_BUCKET': os.getenv('S3_BUCKET'),
+        'TOKEN': os.getenv('TOKEN')
+    }
+    
     missing_vars = [var for var, value in env_vars.items() if not value]
 
     if missing_vars:
@@ -41,7 +34,7 @@ def get_env_vars():
             logger.error(f'Environment variable {var} is not set.')
         exit(1)
 
-    return ORGANIZATION, S3_BUCKET, TOKEN
+    return env_vars
 
 def get_workspaces(ORGANIZATION, TOKEN):
     headers = {
@@ -52,7 +45,7 @@ def get_workspaces(ORGANIZATION, TOKEN):
     url = f'https://app.terraform.io/api/v2/organizations/{ORGANIZATION}/workspaces'
     response = requests.get(url, headers=headers)
 
-    if response.status_code != 200:
+    if not response.ok:
         logger.error('Failed to list workspaces.')
         exit(1)
     else:
@@ -62,73 +55,64 @@ def get_workspaces(ORGANIZATION, TOKEN):
     
     return workspaces_data
 
-def get_download_url(workspaces, TOKEN):
+def get_state_download_url(workspace, TOKEN):
     headers = {
         'Authorization': f'Bearer {TOKEN}',
         'Content-Type': 'application/vnd.api+json'
     }
 
-    for workspace in workspaces:
-        workspace_id = workspace['id']
+    workspace_id = workspace['id']
 
-        url = f'https://app.terraform.io/api/v2/workspaces/{workspace_id}/current-state-version'
-        response = requests.get(url, headers=headers)
+    url = f'https://app.terraform.io/api/v2/workspaces/{workspace_id}/current-state-version'
+    response = requests.get(url, headers=headers)
 
-        if response.status_code != 200:
-            logger.error(f'Failed to get current state version for workspace {workspace_id}.')
-            continue
-
+    if response.status_code == 200:
         state_download_url = response.json()["data"]["attributes"]["hosted-state-download-url"]
-        logger.info(f'Got the current state version for workspace {workspace_id}. Proceeding with backup...')
-        # logger.info(f'state download url {state_download_url}')
-        return state_download_url 
+        logger.info(f'Got the latest state file version for workspace {workspace_id}. Proceeding with backup...')
+        return state_download_url
+    else:
+        logger.error(f'Failed to get latest state file version for workspace {workspace_id}.')
+        return None
 
-def save_state_to_local_file(workspaces, state_download_url):
-    for workspace in workspaces:
-        workspace_id = workspace['id']
+def save_state_to_local_file(workspace, state_download_url):
+    workspace_id = workspace['id']
+    filename = f'{workspace_id}.tfstate'
+    state_response = requests.get(state_download_url)
 
-        filename = f'{workspace_id}.tfstate'
-        state_response = requests.get(state_download_url)
-
-        # Check if the request was successful
-        if state_response.status_code != 200:
-            logger.error(f'State file not found for workspace {workspace_id}.')
-            continue  # Skip the current iteration and move to the next workspace
-
+    if state_response.ok:
         with open(filename, 'w') as f:
             json.dump(state_response.json(), f)
-        
+
         logger.info(f'Saved state file for workspace {workspace_id} as {filename}.')
         return filename
+    else:
+        logger.error(f'State file not found for workspace {workspace_id}.')
+        return None
 
-def zip_state_file(filename, workspaces):
-    for workspace in workspaces:
-        workspace_id = workspace['id']
+def zip_state_file(filename, workspace):
+    workspace_id = workspace['id']
 
-        # Check if state file exists
-        if not os.path.exists(filename):
-            logger.error(f'State file {filename} not found for workspace {workspace_id}. No file to zip.')
-            continue 
-
+    if os.path.exists(filename):
         zipname = f'{datetime.now().strftime("%s")}_{workspace_id}-backup.zip'
         with zipfile.ZipFile(zipname, 'w') as zipf:
             zipf.write(filename)
-        logger.info(f'zip name {zipname}')
+        logger.info(f'State file is zipped and stored as {zipname}')
         return zipname
+    else:
+        logger.error(f'State file not found for workspace {workspace_id}. No file to zip.')
+        return None
 
-def format_s3_key(workspaces, ORGANIZATION):   
-    for workspace in workspaces:
-        workspace_id = workspace['id']
-
+def format_s3_key(workspace, ORGANIZATION):   
+    workspace_id = workspace['id']
     timestamp = datetime.now().strftime("%s")
     s3_key = f'{datetime.now().strftime("%Y-%m-%d")}/terraform-{ORGANIZATION}/{timestamp}_{workspace_id}-backup.zip'
-    logger.info(f's3-key {s3_key}')
     return s3_key
 
 def upload_state_to_s3(S3_BUCKET, zipname, s3_key, filename):
     s3 = boto3.client('s3')
     s3.upload_file(zipname, S3_BUCKET, s3_key)
-   
+    logger.info(f'Uploaded state file to S3 bucket {S3_BUCKET} with key {s3_key}')
+
     os.remove(filename)
     os.remove(zipname)
 
@@ -137,17 +121,20 @@ def main():
         logging.info('Backup process started.')
         global logger
         logger = setup_logger()
-        ORGANIZATION, S3_BUCKET, TOKEN = get_env_vars()
-        workspaces = get_workspaces(ORGANIZATION, TOKEN)
-        state_download_url = get_download_url(workspaces, TOKEN)
-        filename = save_state_to_local_file(workspaces, state_download_url) 
-        zipname = zip_state_file(filename, workspaces)
-        s3_key = format_s3_key(workspaces, ORGANIZATION)
-        upload_state_to_s3(S3_BUCKET, zipname, s3_key, filename)
+        env_vars = get_env_vars()
+        workspaces = get_workspaces(env_vars['ORGANIZATION'], env_vars['TOKEN'])
+        for workspace in workspaces:
+            state_download_url = get_state_download_url(workspace, env_vars['TOKEN'])
+            if state_download_url:
+                filename = save_state_to_local_file(workspace, state_download_url)
+                if filename:
+                    zipname = zip_state_file(filename, workspace)
+                    if zipname:
+                        s3_key = format_s3_key(workspace, env_vars['ORGANIZATION'])
+                        upload_state_to_s3(env_vars['S3_BUCKET'], zipname, s3_key, filename)
     finally:
         exit(0)
-        
+
 if __name__ == "__main__":
     load_dotenv()
-    
     main()
