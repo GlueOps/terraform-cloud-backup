@@ -37,13 +37,13 @@ def get_env_vars():
     return env_vars
 
 def get_workspaces(ORGANIZATION, TOKEN):
+    TERRAFORM_API_URL = f'https://app.terraform.io/api/v2/organizations/{ORGANIZATION}/workspaces'
     headers = {
         'Authorization': f'Bearer {TOKEN}',
         'Content-Type': 'application/vnd.api+json'
     }
 
-    url = f'https://app.terraform.io/api/v2/organizations/{ORGANIZATION}/workspaces'
-    response = requests.get(url, headers=headers)
+    response = requests.get(TERRAFORM_API_URL, headers=headers)
 
     if not response.ok:
         logger.error('Failed to list workspaces.')
@@ -70,6 +70,7 @@ def get_state_download_url(workspace, TOKEN):
         state_download_url = response.json()["data"]["attributes"]["hosted-state-download-url"]
         logger.info(f'Got the latest state file version for workspace {workspace_id}. Proceeding with backup...')
         return state_download_url
+        
     else:
         logger.error(f'Failed to get latest state file version for workspace {workspace_id}.')
         return None
@@ -104,8 +105,8 @@ def zip_state_file(filename, workspace):
 
 def format_s3_key(workspace, ORGANIZATION):   
     workspace_id = workspace['id']
-    timestamp = datetime.now().strftime("%s")
-    s3_key = f'{datetime.now().strftime("%Y-%m-%d")}/terraform-{ORGANIZATION}/{timestamp}_{workspace_id}-backup.zip'
+    timestamp = datetime.utcnow().strftime("%s")
+    s3_key = f'{datetime.utcnow().strftime("%Y-%m-%d")}/terraform-{ORGANIZATION}/{timestamp}_{workspace_id}-backup.zip'
     return s3_key
 
 def upload_state_to_s3(S3_BUCKET, zipname, s3_key, filename):

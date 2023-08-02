@@ -1,0 +1,32 @@
+# Ignore git and other version control directories
+.git
+.svn
+.hg
+.cvsignore
+
+# Ignore OS-specific files
+.DS_Store
+Thumbs.db
+
+# Ignore python specific files
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+*.bak
+*.swp
+*~
+*#
+#*
