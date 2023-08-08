@@ -9,6 +9,8 @@ from datetime import datetime
 import zipfile
 import smart_open
 from typing import List
+from zipfile import ZipFile
+import io
 
 def setup_logger():
     logger = logging.getLogger('TerraformBackupScript')
@@ -101,13 +103,24 @@ def format_s3_key(workspace, ORGANIZATION):
     s3_key = f'{datetime.utcnow().strftime("%Y-%m-%d")}/terraform-{ORGANIZATION}/{timestamp}_{workspace_id}-backup.zip'
     return s3_key
 
-def save_state_to_remote_file(s3_key, workspace, state_download_url, S3_BUCKET, ORGANIZATION):
+def save_state_to_remote_file(s3_key, workspace, state_download_url, S3_BUCKET):
     workspace_id = workspace['id']
     state_response = requests.get(state_download_url)
 
     if state_response.ok:
-        with smart_open.open(f's3://{S3_BUCKET}/{s3_key}', 'w') as f:
-            json.dump(state_response.json(), f)
+        # Create a ZipFile object in memory
+        zip_buffer = io.BytesIO()
+        with ZipFile(zip_buffer, 'w') as zipf:
+            # Name of the file inside the ZIP archive
+            zip_file_name = f'{workspace_id}.tfstate'
+            
+            # Write the state file into the ZIP archive
+            zipf.writestr(zip_file_name, json.dumps(state_response.json()))
+
+        # Write the ZIP archive to S3
+        zip_buffer.seek(0) # Rewind the buffer to the beginning
+        with smart_open.open(f's3://{S3_BUCKET}/{s3_key}', 'wb') as f:
+            f.write(zip_buffer.read())
 
         logger.info(f'Saved state file for workspace {workspace_id} to {S3_BUCKET} with key {s3_key}.')
         return s3_key
@@ -125,15 +138,14 @@ def main():
         for workspace in workspaces:
             logger.debug('Processing workspace %s', workspace['id'])  # Add debug log
             state_download_url = get_state_download_url(workspace, env_vars['TOKEN'])
-            s3_key = format_s3_key(workspace, env_vars['ORGANIZATION'])
             if state_download_url:
                 logger.debug('State file found for workspace %s', workspace['id'])  # Add debug log
-                filename = save_state_to_remote_file(s3_key, workspace, state_download_url, env_vars['S3_BUCKET'], env_vars['ORGANIZATION'])
+                s3_key = format_s3_key(workspace, env_vars['ORGANIZATION'])  # Generating the S3 key
+                save_state_to_remote_file(s3_key, workspace, state_download_url, env_vars['S3_BUCKET'])
     except Exception as e:  # Catch any exceptions
         logger.exception('An error occurred: %s', e)  # Log the exception
     finally:
         exit(0)
-
 
 if __name__ == "__main__":
     load_dotenv()
