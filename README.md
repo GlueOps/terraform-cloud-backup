@@ -19,5 +19,5 @@ AWS_DEFAULT_REGION=<some-value>
 
 - Runing the script
 ```python
-$ docker run --env-file .env ghcr.io/glueops/terraform-cloud-backup:feature-tfc-backup
+$ docker run --env-file .env ghcr.io/glueops/terraform-cloud-backup:main
 ```
