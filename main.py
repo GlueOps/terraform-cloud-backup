@@ -100,7 +100,7 @@ def get_state_download_url(workspace, TOKEN, log_errors=True):
 def format_s3_key(workspace, ORGANIZATION):   
     workspace_id = workspace['id']
     timestamp = datetime.utcnow().strftime("%s")
-    s3_key = f'{datetime.utcnow().strftime("%Y-%m-%d")}/terraform-{ORGANIZATION}/{timestamp}_{workspace_id}-backup.zip'
+    s3_key = f'terraform_cloud/{datetime.utcnow().strftime("%Y-%m-%d")}/terraform-{ORGANIZATION}/{timestamp}_{workspace_id}-backup.zip'
     return s3_key
 
 def save_state_to_remote_file(s3_key, workspace, state_download_url, S3_BUCKET):
@@ -119,7 +119,7 @@ def save_state_to_remote_file(s3_key, workspace, state_download_url, S3_BUCKET):
 
         # Write the ZIP archive to S3
         zip_buffer.seek(0) # Rewind the buffer to the beginning
-        with smart_open.open(f's3://{S3_BUCKET}/terraform_cloud/{s3_key}', 'wb') as f:
+        with smart_open.open(f's3://{S3_BUCKET}/{s3_key}', 'wb') as f:
             f.write(zip_buffer.read())
 
         logger.info(f'Saved state file for workspace {workspace_id} to {S3_BUCKET} with key {s3_key}.')
