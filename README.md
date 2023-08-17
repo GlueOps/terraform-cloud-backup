@@ -21,3 +21,17 @@ AWS_DEFAULT_REGION=<some-value>
 ```python
 $ docker run --env-file .env ghcr.io/glueops/terraform-cloud-backup:main
 ```
+
+## Restoring a state
+- Delete any existing terraform configuration (in your working directory)
+- Locate the S3 bucket, download and then unzip the state file.
+- Place the unzipped state file in the current working directory (where terraform configuration files are)
+- Create a new ```provier.tf`` file
+- Run the following command:
+```bash
+$ terraform init -reconfigure
+$ terraform state <unzipped-state-file>.tfstate
+$ terraform plan
+```
+
+Check the plan output to track the state of your configuration.
