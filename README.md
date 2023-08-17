@@ -23,14 +23,14 @@ $ docker run --env-file .env ghcr.io/glueops/terraform-cloud-backup:main
 ```
 
 ## Restoring a state
-- Delete any existing terraform configuration (in your working directory)
+- Delete the workspace in Terraform Cloud (if it still exists).
+- Recreate the workspace and add any variables (AWS credentials).
 - Locate the S3 bucket, download and then unzip the state file.
 - Place the unzipped state file in the current working directory (where terraform configuration files are)
-- Create a new ```provier.tf`` file
-- Run the following command:
+- Run the following commands:
 ```bash
-$ terraform init -reconfigure
-$ terraform state <unzipped-state-file>.tfstate
+$ terraform init
+$ terraform state push <unzipped-state-file>.tfstate
 $ terraform plan
 ```
 
