@@ -145,7 +145,7 @@ def main():
     except Exception as e:  # Catch any exceptions
         logger.exception('An error occurred: %s', e)  # Log the exception
     finally:
-        exit(0)
+        exit(1)
 
 if __name__ == "__main__":
     load_dotenv()
