@@ -52,16 +52,16 @@ def get_workspaces(ORGANIZATION, TOKEN):
         response.raise_for_status() # Raise exception for 4xx and 5xx responses
     except requests.exceptions.HTTPError as errh:
         logger.error(f"HTTP Error: {errh}")
-        exit(1)
+        raise
     except requests.exceptions.ConnectionError as errc:
         logger.error(f"Error Connecting: {errc}")
-        exit(1)
+        raise
     except requests.exceptions.Timeout as errt:
         logger.error(f"Timeout Error: {errt}")
-        exit(1)
+        raise
     except requests.exceptions.RequestException as err:
         logger.error(f"Something went wrong: {err}")
-        exit(1)
+        raise
 
     workspaces_data = response.json()['data']
     workspace_with_states = []
@@ -144,9 +144,9 @@ def main():
                 save_state_to_remote_file(s3_key, workspace, state_download_url, env_vars['S3_BUCKET'])
     except Exception as e:  # Catch any exceptions
         logger.exception('An error occurred: %s', e)  # Log the exception
-    finally:
-        exit(0)
-
+        raise
+        
+    exit(0)
 if __name__ == "__main__":
     load_dotenv()
     main()
