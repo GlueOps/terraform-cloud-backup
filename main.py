@@ -144,7 +144,7 @@ def main():
                 save_state_to_remote_file(s3_key, workspace, state_download_url, env_vars['S3_BUCKET'])
     except Exception as e:  # Catch any exceptions
         logger.exception('An error occurred: %s', e)  # Log the exception
-        exit(1)
+        raise
         
     exit(0)
 if __name__ == "__main__":
