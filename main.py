@@ -1,111 +1,90 @@
-import os
-import requests
-import boto3
-import logging
-from dotenv import load_dotenv
-from json_log_formatter import JsonFormatter
-import json
-from datetime import datetime
-import zipfile
-import smart_open
-from typing import List
-from zipfile import ZipFile
 import io
+import json
+import os
+from datetime import datetime
+from zipfile import ZipFile
 
-def setup_logger():
-    logger = logging.getLogger('TerraformBackupScript')
+import requests
+import smart_open
+from glueops.setup_logging import configure as go_configure_logging
 
-    if not logger.handlers:
-        handler = logging.StreamHandler()
-        formatter = JsonFormatter()
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
 
-    logger.setLevel(logging.INFO)
-    return logger
+#=== configure logging
+logger = go_configure_logging(
+    name='TERRAFORM_CLOUD_BACKUP',
+    level=os.getenv('PYTHON_LOG_LEVEL', 'INFO')
+)
 
-def get_env_vars():
-    env_vars = {
-        'ORGANIZATION': os.getenv('ORGANIZATION'),
-        'S3_BUCKET': os.getenv('S3_BUCKET'),
-        'TOKEN': os.getenv('TOKEN')
-    }
-    
-    missing_vars = [var for var, value in env_vars.items() if not value]
+# retrieve environment configuration
+try:
+    ORGANIZATION = os.environ['ORGANIZATION']
+    S3_BUCKET = os.environ['S3_BUCKET']
+    TOKEN = os.environ['TOKEN']
+except KeyError:
+    logger.exception('failed to retrieve environment configuration')
+    raise
 
-    if missing_vars:
-        for var in missing_vars:
-            logger.error(f'Environment variable {var} is not set.')
-        exit(1)
+# create headers
+HEADERS = {
+    'Authorization': f'Bearer {TOKEN}',
+    'Content-Type': 'application/vnd.api+json'
+}
 
-    return env_vars
 
-def get_workspaces(ORGANIZATION, TOKEN):
+def get_workspaces(ORGANIZATION):
     TERRAFORM_API_URL = f'https://app.terraform.io/api/v2/organizations/{ORGANIZATION}/workspaces'
-    headers = {
-        'Authorization': f'Bearer {TOKEN}',
-        'Content-Type': 'application/vnd.api+json'
-    }
 
     try:
-        response = requests.get(TERRAFORM_API_URL, headers=headers)
-        response.raise_for_status() # Raise exception for 4xx and 5xx responses
-    except requests.exceptions.HTTPError as errh:
-        logger.error(f"HTTP Error: {errh}")
-        raise
-    except requests.exceptions.ConnectionError as errc:
-        logger.error(f"Error Connecting: {errc}")
-        raise
-    except requests.exceptions.Timeout as errt:
-        logger.error(f"Timeout Error: {errt}")
-        raise
-    except requests.exceptions.RequestException as err:
-        logger.error(f"Something went wrong: {err}")
+        response = requests.get(TERRAFORM_API_URL, headers=HEADERS)
+        response.raise_for_status()
+    except Exception:
+        logger.exception(f"request exception")
         raise
 
     workspaces_data = response.json()['data']
-    workspace_with_states = []
 
-    for workspace in workspaces_data:
-        if get_state_download_url(workspace, TOKEN, log_errors=False): # Ignore workspaces without state files
-            workspace_with_states.append(workspace)
+    workspace_with_states = [
+        workspace for workspace in workspaces_data
+        if get_state_download_url(workspace)
+    ]
 
     workspace_names = [workspace['attributes']['name'] for workspace in workspace_with_states] 
     logger.info(f'The workspaces with state files are {workspace_names}')
     
     return workspace_with_states
 
-def get_state_download_url(workspace, TOKEN, log_errors=True):
-    headers = {
-        'Authorization': f'Bearer {TOKEN}',
-        'Content-Type': 'application/vnd.api+json'
-    }
 
+def get_state_download_url(workspace):
     workspace_id = workspace['id']
 
     url = f'https://app.terraform.io/api/v2/workspaces/{workspace_id}/current-state-version'
-    response = requests.get(url, headers=headers)
 
-    if response.ok:
+    try:
+        response = requests.get(url, headers=HEADERS)
+        response.raise_for_status()
+    except Exception:
+        logger.exception(f'Failed to retrieve current state metadata for: {workspace}')
+
+    try:
         state_download_url = response.json()["data"]["attributes"]["hosted-state-download-url"]
-        if log_errors:
-            logger.info(f'Got the latest state file version for workspace {workspace_id}. Proceeding with backup...')
+        logger.info(f'retrieved download_url for: {workspace}')
         return state_download_url
-        
-    else:
-        if log_errors:
-            logger.warning(f'No state file for workspace {workspace_id}.')
+    except KeyError:
+        logger.warn(f'no state file download_url for {workspace}')
         return None
+
 
 def format_s3_key(workspace, ORGANIZATION):   
     workspace_id = workspace['id']
+    workspace_name = workspace['attributes']['name']
     timestamp = datetime.utcnow().strftime("%s")
-    s3_key = f'terraform_cloud/{datetime.utcnow().strftime("%Y-%m-%d")}/terraform-{ORGANIZATION}/{timestamp}_{workspace_id}-backup.zip'
+    s3_key = f'terraform_cloud/{datetime.utcnow().strftime("%Y-%m-%d")}/terraform-{ORGANIZATION}/{timestamp}_{workspace_name}_{workspace_id}-backup.zip'
     return s3_key
+
 
 def save_state_to_remote_file(s3_key, workspace, state_download_url, S3_BUCKET):
     workspace_id = workspace['id']
-    state_response = requests.get(state_download_url)
+    state_response = requests.get(state_download_url, headers=HEADERS)
 
     if state_response.ok:
         # Create a ZipFile object in memory
@@ -122,31 +101,27 @@ def save_state_to_remote_file(s3_key, workspace, state_download_url, S3_BUCKET):
         with smart_open.open(f's3://{S3_BUCKET}/{s3_key}', 'wb') as f:
             f.write(zip_buffer.read())
 
-        logger.info(f'Saved state file for workspace {workspace_id} to {S3_BUCKET} with key {s3_key}.')
         return s3_key
     else:
-        logger.error(f'State file not found for workspace {workspace_id}.')
+        logger.exception(f'workspace: {workspace_id} - Unable to save state file to s3 .  response: {state_response}')
         return None
+
 
 def main():
     try:
-        logging.info('Backup process started.')
-        global logger
-        logger = setup_logger()
-        env_vars = get_env_vars()
-        workspaces = get_workspaces(env_vars['ORGANIZATION'], env_vars['TOKEN'])
+        logger.info('Backup process started.')
+        workspaces = get_workspaces(ORGANIZATION)
         for workspace in workspaces:
-            logger.debug('Processing workspace %s', workspace['id'])  # Add debug log
-            state_download_url = get_state_download_url(workspace, env_vars['TOKEN'])
+            logger.debug(f'Processing workspace: {workspace["id"]} - {workspace["attributes"]["name"]}')
+            state_download_url = get_state_download_url(workspace)
             if state_download_url:
-                logger.debug('State file found for workspace %s', workspace['id'])  # Add debug log
-                s3_key = format_s3_key(workspace, env_vars['ORGANIZATION'])  # Generating the S3 key
-                save_state_to_remote_file(s3_key, workspace, state_download_url, env_vars['S3_BUCKET'])
-    except Exception as e:  # Catch any exceptions
-        logger.exception('An error occurred: %s', e)  # Log the exception
+                logger.debug(f'State file found for workspace  {workspace["id"]} - {workspace["attributes"]["name"]}')
+                s3_key = format_s3_key(workspace, ORGANIZATION)
+                save_state_to_remote_file(s3_key, workspace, state_download_url, S3_BUCKET)
+                logger.info(f'wrote state file for {workspace["id"]}, {workspace["attributes"]["name"]} to s3://{S3_BUCKET}/{s3_key}')
+    except Exception as e:
+        logger.exception(f'An error occurred: {e}')
         raise
         
-    exit(0)
 if __name__ == "__main__":
-    load_dotenv()
     main()
