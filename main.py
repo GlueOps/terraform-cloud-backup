@@ -70,7 +70,7 @@ def get_state_download_url(workspace):
         logger.info(f'retrieved download_url for: {workspace}')
         return state_download_url
     except KeyError:
-        logger.warn(f'no state file download_url for {workspace}')
+        logger.warning(f'no state file download_url for {workspace}')
         return None
 
 
