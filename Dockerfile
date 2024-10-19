@@ -1,5 +1,5 @@
 # Use an official Python runtime as the parent image
-FROM python:3.11.9-alpine@sha256:eb8afe385f10ccc9da8378e8712fea8b26f4ed009648f8afea4518836d8b3ed3
+FROM python:3.13.0-alpine@sha256:c38ead8bcf521573dad837d7ecfdebbc87792202e89953ba8b2b83a9c5a520b6
 
 # Set the working directory in the container to /app
 WORKDIR /app
